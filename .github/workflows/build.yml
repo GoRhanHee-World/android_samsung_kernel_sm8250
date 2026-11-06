@@ -1,4 +1,4 @@
-name: Release builder
+name: Kernel builder
 
 on:
   workflow_call:
@@ -9,21 +9,21 @@ on:
       device_name:
         type: string
         required: true
-      build:
+      build_mode:
         type: string
-        required: true
+        default: ksu
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-kernel:
+    name: ${{ inputs.device_name }} (${{ inputs.build_mode }})
     runs-on: ubuntu-latest
 
     env:
       DEVICE: ${{ inputs.device }}
-      DEVICE_NAME: ${{ inputs.device_name }}
-      BUILD: ${{ inputs.build }}
+      BUILD_MODE: ${{ inputs.build_mode }}
 
     steps:
       - name: Check Out
@@ -39,72 +39,13 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      - name: Set Build Start Time
-        run: echo "START_TIME=$(date +%s)" >> $GITHUB_ENV
-
       - name: Run build script
-        run: |
-          export DEVICE=${{ env.DEVICE }}
-          export BUILD=${{ env.BUILD }}
-          ./build.sh
+        run: ./build.sh
 
-      - name: Set Build End Time
-        run: echo "END_TIME=$(date +%s)" >> $GITHUB_ENV
-
-      - name: Calculate Build Duration
-        run: |
-          duration=$((END_TIME - START_TIME))
-          minutes=$((duration / 60))
-          seconds=$((duration % 60))
-          echo "BUILD_DURATION=${minutes}m ${seconds}s" >> $GITHUB_ENV
-
-      - name: Set ZIP File Path
-        run: |
-         zip=$(ls not-*.zip 2>/dev/null | head -n1)
-         if [ -z "$zip" ]; then
-           echo "❌ No ZIP found!"
-           exit 1
-         fi
-         echo "zip_file=$zip" >> $GITHUB_ENV
-
-      - name: Set release tag
-        run: echo "RELEASE_TAG=${DEVICE}-$(date +'%Y%m%d')" >> $GITHUB_ENV
-
-      - name: Prepare Release Info
-        run: |
-          set -e
-          echo "KERNEL_VERSION=$(cat out/include/config/kernel.release)" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +'%d %B %Y')" >> $GITHUB_ENV
-          echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "CLANG_VERSION=$(${{ github.workspace }}/tc/clang/bin/clang --version | head -n1)" >> $GITHUB_ENV
-          KSU_VERSION=$(grep -m1 'KSU_VERSION' -r ./KernelSU/kernel/Makefile | sed -E 's/.*KSU_VERSION=([0-9]+).*/\1/')
-          [ -z "$KSU_VERSION" ] && KSU_VERSION="Unknown"
-          echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
-          git -C KernelSU fetch --tags 2>/dev/null || true
-          KSU_VERSION_STR=$(git -C KernelSU describe --tags --always 2>/dev/null)
-          [ -z "$KSU_VERSION_STR" ] && KSU_VERSION_STR="Unknown"
-          echo "KSU_VERSION_STR=$KSU_VERSION_STR" >> $GITHUB_ENV
-          SUSFS_VERSION=$(grep -m1 'SUSFS_VERSION' ./include/linux/susfs.h 2>/dev/null | awk -F'"' '{print $2}')
-          [ -z "$SUSFS_VERSION" ] && SUSFS_VERSION="Unknown"
-          echo "SUSFS_VERSION=$SUSFS_VERSION" >> $GITHUB_ENV
-
-      - name: Debug ZIP
-        run: ls -lh
-
-      - name: Create Release and Upload ZIP
-        uses: softprops/action-gh-release@v2
+      - name: Upload kernel ZIP
+        uses: actions/upload-artifact@v7
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: not_kernel ${{ env.KERNEL_VERSION }} for ${{ env.DEVICE_NAME }}
-          files: ${{ env.zip_file }}
-          body: |
-             Clang version: ${{ env.CLANG_VERSION }}
-             Build Date: ${{ env.BUILD_DATE }}
-             KernelSU version: ${{ env.KSU_VERSION }} / ${{ env.KSU_VERSION_STR }}
-             SusFS version: ${{ env.SUSFS_VERSION }}
-             SELinux: Enforcing
-             Commit: ${{ env.COMMIT_HASH }}
-             Build completed in: ${{ env.BUILD_DURATION }}
-              
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: kernel-${{ inputs.device }}-${{ inputs.build_mode }}
+          path: not-${{ inputs.build_mode }}-*-${{ inputs.device }}.zip
+          if-no-files-found: error
+          compression-level: 0

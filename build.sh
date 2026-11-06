@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -e
+
 SECONDS=0 # builtin bash timer
 
 GREEN='\033[0;32m'
@@ -10,9 +13,20 @@ NC='\033[0m'
 AK3_REPO="https://github.com/notkernel-oss/AnyKernel3"
 AK3_BRANCH="$DEVICE"
 
-ZIPNAME="not-$(date '+%Y%m%d').zip"
+BUILD_MODE="${BUILD_MODE:-ksu}"
+case "$BUILD_MODE" in
+    ksu|stock)
+        MODE_CONFIG="vendor/not/${BUILD_MODE}.config"
+        ;;
+    *)
+        echo "Invalid BUILD_MODE '$BUILD_MODE'; expected ksu or stock." >&2
+        exit 1
+        ;;
+esac
+
+ZIPNAME="not-${BUILD_MODE}-$(date '+%Y%m%d').zip"
 TC_DIR="$(pwd)/tc/clang"
-DEFCONFIG="vendor/kona-perf_defconfig vendor/samsung/kona-sec-common.config vendor/samsung/$DEVICE.config vendor/not/ksu.config vendor/not/localversion.config"
+DEFCONFIG="vendor/kona-perf_defconfig vendor/samsung/kona-sec-common.config vendor/samsung/$DEVICE.config $MODE_CONFIG vendor/not/localversion.config"
 
 OUT_DIR="$(pwd)/out"
 BOOT_DIR="$OUT_DIR/arch/arm64/boot"
@@ -57,6 +71,16 @@ echo -e "${YELLOW}building with: $DEFCONFIG${NC}"
 
 make O=out ARCH=arm64 $DEFCONFIG
 make O=out ARCH=arm64 olddefconfig
+
+if [ "$BUILD_MODE" = ksu ]; then
+    if ! grep -qx 'CONFIG_KSU=y' out/.config; then
+        echo "KernelSU was not enabled in the generated configuration." >&2
+        exit 1
+    fi
+elif grep -Eq '^CONFIG_KSU=[ym]$' out/.config; then
+    echo "KernelSU is still enabled in the stock configuration." >&2
+    exit 1
+fi
 
 echo -e "\n${YELLOW}Starting compilation...${NC}\n"
 
