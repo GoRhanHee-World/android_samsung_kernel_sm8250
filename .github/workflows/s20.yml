@@ -1,0 +1,26 @@
+name: Release build for Galaxy S20 series
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-s20:
+    name: Build ${{ matrix.device }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: x1q
+            device_name: Galaxy S20
+          - device: y2q
+            device_name: Galaxy S20+
+          - device: z3q
+            device_name: Galaxy S20 Ultra
+    uses: ./.github/workflows/build.yml
+    with:
+      device: ${{ matrix.device }}
+      device_name: ${{ matrix.device_name }}
+      build: build

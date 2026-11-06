@@ -12,11 +12,6 @@ on:
       build:
         type: string
         required: true
-    secrets:
-      TELEGRAM_BOT_TOKEN:
-        required: true
-      TELEGRAM_CHAT_ID:
-        required: true
 
 permissions:
   contents: write
@@ -32,7 +27,7 @@ jobs:
 
     steps:
       - name: Check Out
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Set Timezone
         uses: szenius/set-timezone@v1.2
@@ -62,36 +57,6 @@ jobs:
           minutes=$((duration / 60))
           seconds=$((duration % 60))
           echo "BUILD_DURATION=${minutes}m ${seconds}s" >> $GITHUB_ENV
-
-      - name: Upload to Telegram
-        run: |
-          gitsha1=$(git rev-parse --short HEAD)
-          zip_file=$(ls not-*.zip 2>/dev/null | head -n 1)
-          if [ -z "$zip_file" ]; then
-            echo "No zip found!"
-            exit 1
-          fi
-          DEVICE_NAME_ESCAPED=$(echo "$DEVICE_NAME" | sed 's/[][_*()~`>#+=|{}.!-]/\\&/g')
-          DEVICE_ESCAPED=$(echo "$DEVICE" | sed 's/[][_*()~`>#+=|{}.!-]/\\&/g')
-          printf "| Localversion: `cat out/include/config/kernel.release`
-           | Build Date: `date +'%d %B %Y'`
-           | Build commit hash: $gitsha1
-           | KernelSU: yes
-           | SELinux: Enforcing" >> buildDetails.txt
-          buildDetails="`cat buildDetails.txt`"
-          msg="*not\\-kernel* $BUILD for the *${DEVICE_NAME_ESCAPED} \\(${DEVICE_ESCAPED}\\)*
-          * *
-          \`\`\`
-          $buildDetails
-          \`\`\`
-          *@not\\_kernel \\| @sKernelSU*
-          * * "
-          file="$zip_file"
-          curl -s -F document=@$file "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
-          -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -F "disable_web_page_preview=true" \
-          -F "parse_mode=markdownv2" \
-          -F caption="$msg"
 
       - name: Set ZIP File Path
         run: |
