@@ -7,3 +7,7 @@
 [submodule "KernelSU"]
 	path = KernelSU
 	url = https://github.com/doubledashdot/sKernelSU
+[submodule "prebuilts/AnyKernel3"]
+	path = prebuilts/AnyKernel3
+	url = https://github.com/WildKernels/AnyKernel3.git
+	branch = gki-2.0

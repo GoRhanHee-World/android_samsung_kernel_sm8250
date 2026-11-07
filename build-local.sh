@@ -93,9 +93,6 @@ DEFCONFIG="$PLATFORM_DEFCONFIG $COMMON_DEFCONFIG $PROJECT_CONFIG $EXTRA_CONFIG"
 
 
 # Paths
-AK3_REPO="https://github.com/notkernel-oss/AnyKernel3"
-AK3_BRANCH="$MODEL"
-
 TC_DIR="$(pwd)/tc/clang"
 OUT_DIR="$(pwd)/out"
 BOOT_DIR="$OUT_DIR/arch/arm64/boot"
@@ -168,33 +165,7 @@ for file in "$BOOT_DIR/Image.gz" "$BOOT_DIR/dtbo.img" "${DTBS[@]}"; do
 done
 cat "${DTBS[@]}" > "$BOOT_DIR/dtb"
 
-# AK3
-rm -rf AnyKernel3
-echo "[*] Cloning AnyKernel3..."
-git clone -q -b "$AK3_BRANCH" "$AK3_REPO" AnyKernel3 || exit 1
-
-cp "$BOOT_DIR/dtbo.img" AnyKernel3/
-cp "$BOOT_DIR/Image.gz" AnyKernel3/
-cp "$BOOT_DIR/dtb" AnyKernel3/
-
-# Match the upstream installer to the payloads produced by this build.
-# shellcheck disable=SC2016
-sed -i \
-    -e 's/^supported\.versions=13 - 16$/supported.versions=13 - 17/' \
-    -e 's/android\.is_ous/android.is_uos/g' \
-    -e '/^case "\$ZIPFILE" in$/,/^esac$/c\
-# Use the DTB built with this kernel, independently of the ZIP filename.\
-[ -s "$home/dtb" ] || abort "Missing or empty dtb. Aborting...";' \
-    AnyKernel3/anykernel.sh
-if grep -Eq 'kona(-eff)?\.dtb|android\.is_ous|^supported\.versions=13 - 16$' AnyKernel3/anykernel.sh; then
-    echo "AnyKernel3 installer still contains incompatible settings." >&2
-    exit 1
-fi
-sh -n AnyKernel3/anykernel.sh
-
-cd AnyKernel3
-zip -r9 "../$ZIPNAME" * -x .git README.md '*placeholder'
-cd ..
+bash prebuilts/make_anykernel_package.sh "$ZIPNAME" "$BOOT_DIR" "$MODEL" Image.gz
 
 echo -e "\n${GREEN}Completed in $((SECONDS / 60))m $((SECONDS % 60))s${NC}"
 echo -e "${GREEN}Zip: $ZIPNAME${NC}"
