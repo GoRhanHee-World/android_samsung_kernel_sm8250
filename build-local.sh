@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 SECONDS=0 # builtin bash timer
 
@@ -157,30 +158,15 @@ rm -rf out/arch/arm64/boot #ok
 make $MAKE_ARGS dtbo.img
 make $MAKE_ARGS Image.gz
 
-
-# Post build checks
-if [ ! -f "$BOOT_DIR/Image.gz" ]; then
-    echo -e "${RED}Compilation failed!${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}Kernel Image found!${NC}"
-
-if [ ! -d "$DTS_DIR" ]; then
-    echo -e "${RED}DTS directory missing!${NC}"
-    exit 1
-fi
-
-echo -e "${BLUE}Generating DTB...${NC}"
-cat $(find "$DTS_DIR" -name "*.dtb" | sort) > "$BOOT_DIR/dtb"
-
-if [ ! -f "$BOOT_DIR/dtb" ]; then
-    echo -e "${RED}DTB generation failed!${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}DTB + DTBO ready!${NC}"
-
+# Samsung's three base DTBs, in the same order as the previous sorted list.
+DTBS=("$DTS_DIR/kona-v2.1.dtb" "$DTS_DIR/kona-v2.dtb" "$DTS_DIR/kona.dtb")
+for file in "$BOOT_DIR/Image.gz" "$BOOT_DIR/dtbo.img" "${DTBS[@]}"; do
+    if [ ! -s "$file" ]; then
+        echo "Missing or empty build output: $file" >&2
+        exit 1
+    fi
+done
+cat "${DTBS[@]}" > "$BOOT_DIR/dtb"
 
 # AK3
 rm -rf AnyKernel3
@@ -191,11 +177,23 @@ cp "$BOOT_DIR/dtbo.img" AnyKernel3/
 cp "$BOOT_DIR/Image.gz" AnyKernel3/
 cp "$BOOT_DIR/dtb" AnyKernel3/
 
-# remove older builds
-rm -rf *.zip
+# Match the upstream installer to the payloads produced by this build.
+# shellcheck disable=SC2016
+sed -i \
+    -e 's/^supported\.versions=13 - 16$/supported.versions=13 - 17/' \
+    -e 's/android\.is_ous/android.is_uos/g' \
+    -e '/^case "\$ZIPFILE" in$/,/^esac$/c\
+# Use the DTB built with this kernel, independently of the ZIP filename.\
+[ -s "$home/dtb" ] || abort "Missing or empty dtb. Aborting...";' \
+    AnyKernel3/anykernel.sh
+if grep -Eq 'kona(-eff)?\.dtb|android\.is_ous|^supported\.versions=13 - 16$' AnyKernel3/anykernel.sh; then
+    echo "AnyKernel3 installer still contains incompatible settings." >&2
+    exit 1
+fi
+sh -n AnyKernel3/anykernel.sh
 
 cd AnyKernel3
-zip -r9 "../$ZIPNAME" * -x .git README.md *placeholder
+zip -r9 "../$ZIPNAME" * -x .git README.md '*placeholder'
 cd ..
 
 echo -e "\n${GREEN}Completed in $((SECONDS / 60))m $((SECONDS % 60))s${NC}"

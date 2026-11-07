@@ -6,7 +6,6 @@ SECONDS=0 # builtin bash timer
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m'
 
 # ===== AnyKernel3 =====
@@ -95,28 +94,16 @@ make -j$(nproc --all) O=out ARCH=arm64 \
     OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
     CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
     LLVM=1 LLVM_IAS=1 Image
-    
-if [ -f "$BOOT_DIR/Image" ]; then
-    echo -e "${GREEN}Kernel Image found!${NC}"
-    
-    if [ -d "$DTS_DIR" ]; then
-        echo -e "${BLUE}Generating dtb from $DTS_DIR...${NC}"
-        cat $(find "$DTS_DIR" -type f -name "*.dtb" | sort) > "$BOOT_DIR/dtb"
-        
-        if [ -f "$BOOT_DIR/dtb" ]; then
-            echo -e "${GREEN}dtb generated successfully!${NC}"
-        else
-            echo -e "${RED}Failed to generate dtb! Check if dtbs were compiled.${NC}"
-            exit 1
-        fi
-    else
-        echo -e "${RED}DTS directory not found. Compilation might be incomplete.${NC}"
+
+# Samsung's three base DTBs, in the same order as the previous sorted list.
+DTBS=("$DTS_DIR/kona-v2.1.dtb" "$DTS_DIR/kona-v2.dtb" "$DTS_DIR/kona.dtb")
+for file in "$BOOT_DIR/Image" "$BOOT_DIR/dtbo.img" "${DTBS[@]}"; do
+    if [ ! -s "$file" ]; then
+        echo "Missing or empty build output: $file" >&2
         exit 1
     fi
-else
-    echo -e "\n${RED}Compilation failed! Image not found.${NC}"
-    exit 1
-fi
+done
+cat "${DTBS[@]}" > "$BOOT_DIR/dtb"
 
 rm -rf AnyKernel3
 echo "[*] Cloning AnyKernel3 for $DEVICE"
@@ -128,9 +115,23 @@ cp "$BOOT_DIR/dtbo.img" AnyKernel3/dtbo.img
 cp "$BOOT_DIR/Image" AnyKernel3/Image
 cp "$BOOT_DIR/dtb" AnyKernel3/dtb
 
-cd AnyKernel3
+# Match the upstream installer to the payloads produced by this build.
+# shellcheck disable=SC2016
+sed -i \
+    -e 's/^supported\.versions=13 - 16$/supported.versions=13 - 17/' \
+    -e 's/android\.is_ous/android.is_uos/g' \
+    -e '/^case "\$ZIPFILE" in$/,/^esac$/c\
+# Use the DTB built with this kernel, independently of the ZIP filename.\
+[ -s "$home/dtb" ] || abort "Missing or empty dtb. Aborting...";' \
+    AnyKernel3/anykernel.sh
+if grep -Eq 'kona(-eff)?\.dtb|android\.is_ous|^supported\.versions=13 - 16$' AnyKernel3/anykernel.sh; then
+    echo "AnyKernel3 installer still contains incompatible settings." >&2
+    exit 1
+fi
+sh -n AnyKernel3/anykernel.sh
 
-zip -r9 "../$ZIPNAME" * -x .git README.md *placeholder
+cd AnyKernel3
+zip -r9 "../$ZIPNAME" * -x .git README.md '*placeholder'
 cd ..
 
 echo -e "\n${GREEN}Completed in $((SECONDS / 60)) minute(s) and $((SECONDS % 60)) second(s)!${NC}"
