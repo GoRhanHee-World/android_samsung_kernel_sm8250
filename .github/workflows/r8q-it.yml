@@ -12,7 +12,7 @@ on:
           - stock
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-r8q:

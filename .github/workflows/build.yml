@@ -14,7 +14,7 @@ on:
         default: ksu
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-kernel:
@@ -40,7 +40,12 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Run build script
-        run: ./build.sh
+        id: build
+        run: |
+          start_time=$SECONDS
+          ./build.sh
+          duration=$((SECONDS - start_time))
+          echo "duration=$((duration / 60))m $((duration % 60))s" >> "$GITHUB_OUTPUT"
 
       - name: Upload kernel ZIP
         uses: actions/upload-artifact@v7
@@ -49,3 +54,66 @@ jobs:
           path: not-${{ inputs.build_mode }}-*-${{ inputs.device }}.zip
           if-no-files-found: error
           compression-level: 0
+
+      - name: Prepare release information
+        id: release
+        env:
+          BUILD_DURATION: ${{ steps.build.outputs.duration }}
+        run: |
+          shopt -s nullglob
+          zip_files=(not-"$BUILD_MODE"-*-"$DEVICE".zip)
+          if [ "${#zip_files[@]}" -ne 1 ]; then
+            echo "Expected exactly one ZIP for $DEVICE ($BUILD_MODE)." >&2
+            exit 1
+          fi
+          zip_file=${zip_files[0]}
+          build_day=${zip_file#not-"$BUILD_MODE"-}
+          build_day=${build_day%%-*}
+          build_date=$(date -d "$build_day" '+%Y-%m-%d')
+          {
+            echo "tag=$DEVICE-$build_day"
+            echo "title=$DEVICE - $build_date"
+            echo "zip_file=$zip_file"
+          } >> "$GITHUB_OUTPUT"
+
+          clang_version=$(tc/clang/bin/clang --version | head -n1)
+          ksu_version=Disabled
+          if grep -qx 'CONFIG_KSU=y' out/.config; then
+            ksu_number=$(awk -F 'KSU_VERSION=' '/-DKSU_VERSION=[0-9]+/ { sub(/[^0-9].*$/, "", $2); print $2; exit }' KernelSU/kernel/Makefile)
+            ksu_tag=$(awk -F '"' '/-DKSU_VERSION_TAG=/ { gsub(/\\/, "", $2); print $2; exit }' KernelSU/kernel/Makefile)
+            ksu_version="${ksu_number:-Unknown} / ${ksu_tag:-Unknown}"
+          fi
+          susfs_version="Not included"
+          if grep -qx 'CONFIG_KSU_SUSFS=y' out/.config; then
+            susfs_version=$(awk -F '"' '/^#define SUSFS_VERSION / { print $2; exit }' include/linux/susfs.h)
+            susfs_version=${susfs_version:-Unknown}
+          fi
+          selinux=Enforcing
+          if ! grep -qx 'CONFIG_SECURITY_SELINUX=y' out/.config; then
+            selinux=Disabled
+          elif grep -qx 'CONFIG_SECURITY_SELINUX_PERMISSIVE=y' out/.config; then
+            selinux=Permissive
+          fi
+          cat > out/release-notes.md <<EOF
+          Clang version: $clang_version
+          Build Date: $(date -d "$build_day" '+%d %B %Y')
+          Device: $DEVICE
+          Build mode: $BUILD_MODE
+          KernelSU version: $ksu_version
+          SusFS version: $susfs_version
+          SELinux: $selinux
+          Commit: $(git rev-parse --short=8 HEAD)
+          Build completed in: $BUILD_DURATION
+          EOF
+
+      - name: Publish kernel release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ${{ steps.release.outputs.title }}
+          target_commitish: ${{ github.sha }}
+          body_path: out/release-notes.md
+          files: ${{ steps.release.outputs.zip_file }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
