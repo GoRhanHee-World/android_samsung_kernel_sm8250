@@ -10,6 +10,7 @@ do.systemless=0
 do.cleanup=1
 do.cleanuponabort=0
 do.check_boot_version=0
+do.mount_apex=0
 device.name1=@DEVICE@
 device.name2=@DEVICE@xx
 device.name3=@DEVICE@xxx

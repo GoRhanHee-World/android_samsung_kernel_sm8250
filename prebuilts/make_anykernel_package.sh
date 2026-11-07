@@ -41,6 +41,25 @@ INSTALLER="$(< "$PREBUILTS_DIR/anykernel.sh")"
 printf '%s\n' "${INSTALLER//@DEVICE@/$DEVICE}" > "$STAGE_DIR/anykernel.sh"
 sh -n "$STAGE_DIR/anykernel.sh"
 
+# Patch the staged backend so submodule updates retain our kernel-only policy.
+# Android 17 can ship EROFS APEX payloads; the upstream ext4-only mount loop
+# can block on a loop device already used by recovery. Keep recovery's APEX.
+BACKEND="$STAGE_DIR/META-INF/com/google/android/update-binary"
+if [[ "$(grep -cxF 'mount_apex() {' "$BACKEND")" != 1 ]]; then
+    echo "Unexpected AnyKernel mount_apex layout; review the Android 17 fix." >&2
+    exit 1
+fi
+{
+    echo '  # Keep the recovery APEX environment for this kernel-only installer.'
+    echo '  # ROM APEX expansion can block while reusing occupied loop devices.'
+    echo '  if [ "$(file_getprop "$AKHOME/anykernel.sh" do.mount_apex)" == 0 ]; then'
+    echo '    echo "Skipping ROM APEX mounts for kernel-only installation." >&2;'
+    echo '    return 0;'
+    echo '  fi;'
+} > "$STAGE_DIR/apex-guard"
+sed -i "/^mount_apex() {$/r $STAGE_DIR/apex-guard" "$BACKEND"
+sh -n "$BACKEND"
+
 for file in "$IMAGE" dtb dtbo.img; do
     cp "$BOOT_DIR/$file" "$STAGE_DIR/$file"
     chmod 0644 "$STAGE_DIR/$file"
