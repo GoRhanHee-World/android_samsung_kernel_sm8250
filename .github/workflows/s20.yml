@@ -2,21 +2,14 @@ name: Build for Galaxy S20 series
 
 on:
   workflow_dispatch:
-    inputs:
-      build_mode:
-        type: choice
-        required: true
-        default: ksu
-        options:
-          - ksu
-          - stock
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build-s20:
-    name: Build ${{ matrix.device }} (${{ inputs.build_mode }})
+    name: Build ${{ matrix.device }} (stock + ksu)
     strategy:
       fail-fast: false
       matrix:
@@ -31,4 +24,3 @@ jobs:
     with:
       device: ${{ matrix.device }}
       device_name: ${{ matrix.device_name }}
-      build_mode: ${{ inputs.build_mode }}

@@ -2,17 +2,10 @@ name: IT build for r8q
 
 on:
   workflow_dispatch:
-    inputs:
-      build_mode:
-        type: choice
-        required: true
-        default: ksu
-        options:
-          - ksu
-          - stock
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build-r8q:
@@ -20,4 +13,3 @@ jobs:
     with:
       device: r8q
       device_name: Galaxy S20 FE
-      build_mode: ${{ inputs.build_mode }}

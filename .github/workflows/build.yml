@@ -9,21 +9,38 @@ on:
       device_name:
         type: string
         required: true
-      build_mode:
-        type: string
-        default: ksu
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
-  build-kernel:
-    name: ${{ inputs.device_name }} (${{ inputs.build_mode }})
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      build_date: ${{ steps.date.outputs.build_date }}
+    steps:
+      - name: Choose a shared build date for both modes
+        id: date
+        env:
+          TZ: America/Sao_Paulo
+        run: echo "build_date=$(date '+%Y%m%d')" >> "$GITHUB_OUTPUT"
+
+  build-kernel:
+    name: ${{ inputs.device_name }} (${{ matrix.build_mode }})
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        build_mode: [stock, ksu]
 
     env:
       DEVICE: ${{ inputs.device }}
-      BUILD_MODE: ${{ inputs.build_mode }}
+      BUILD_MODE: ${{ matrix.build_mode }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
 
     steps:
       - name: Check Out
@@ -47,16 +64,7 @@ jobs:
           duration=$((SECONDS - start_time))
           echo "duration=$((duration / 60))m $((duration % 60))s" >> "$GITHUB_OUTPUT"
 
-      - name: Upload kernel ZIP
-        uses: actions/upload-artifact@v7
-        with:
-          name: kernel-${{ inputs.device }}-${{ inputs.build_mode }}
-          path: not-${{ inputs.build_mode }}-*-${{ inputs.device }}.zip
-          if-no-files-found: error
-          compression-level: 0
-
-      - name: Prepare release information
-        id: release
+      - name: Prepare build bundle
         env:
           BUILD_DURATION: ${{ steps.build.outputs.duration }}
         run: |
@@ -67,21 +75,16 @@ jobs:
             exit 1
           fi
           zip_file=${zip_files[0]}
-          build_day=${zip_file#not-"$BUILD_MODE"-}
-          build_day=${build_day%%-*}
-          build_date=$(date -d "$build_day" '+%Y-%m-%d')
-          {
-            echo "tag=$DEVICE-$build_day"
-            echo "title=$DEVICE - $build_date"
-            echo "zip_file=$zip_file"
-          } >> "$GITHUB_OUTPUT"
+          mkdir -p bundle
+          cp "$zip_file" bundle/
 
           clang_version=$(tc/clang/bin/clang --version | head -n1)
           ksu_version=Disabled
           if grep -qx 'CONFIG_KSU=y' out/.config; then
             ksu_number=$(awk -F 'KSU_VERSION=' '/-DKSU_VERSION=[0-9]+/ { sub(/[^0-9].*$/, "", $2); print $2; exit }' KernelSU/kernel/Makefile)
             ksu_tag=$(awk -F '"' '/-DKSU_VERSION_TAG=/ { gsub(/\\/, "", $2); print $2; exit }' KernelSU/kernel/Makefile)
-            ksu_version="${ksu_number:-Unknown} / ${ksu_tag:-Unknown}"
+            ksu_tag=${ksu_tag:-$(git -C KernelSU describe --tags --always)}
+            ksu_version="${ksu_number:-Unknown} / $ksu_tag"
           fi
           susfs_version="Not included"
           if grep -qx 'CONFIG_KSU_SUSFS=y' out/.config; then
@@ -94,9 +97,9 @@ jobs:
           elif grep -qx 'CONFIG_SECURITY_SELINUX_PERMISSIVE=y' out/.config; then
             selinux=Permissive
           fi
-          cat > out/release-notes.md <<EOF
+          cat > "bundle/release-notes-$BUILD_MODE.md" <<EOF
           Clang version: $clang_version
-          Build Date: $(date -d "$build_day" '+%d %B %Y')
+          Build Date: $(date -d "$BUILD_DATE" '+%d %B %Y')
           Device: $DEVICE
           Build mode: $BUILD_MODE
           KernelSU version: $ksu_version
@@ -106,14 +109,115 @@ jobs:
           Build completed in: $BUILD_DURATION
           EOF
 
-      - name: Publish kernel release
+      - name: Upload temporary build bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ inputs.device }}-${{ matrix.build_mode }}
+          path: bundle/*
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  publish:
+    name: Publish ${{ inputs.device_name }} (stock + ksu)
+    needs: [prepare, build-kernel]
+    runs-on: ubuntu-latest
+    env:
+      DEVICE: ${{ inputs.device }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+    steps:
+      - name: Download both build bundles
+        uses: actions/download-artifact@v8
+        with:
+          pattern: build-${{ inputs.device }}-*
+          path: bundles
+          merge-multiple: true
+
+      - name: Validate both modes and combine release notes
+        id: release
+        shell: bash
+        run: |
+          shopt -s nullglob
+          mkdir -p release
+          for mode in stock ksu; do
+            zip_files=(bundles/not-"$mode"-"$BUILD_DATE"-*-"$DEVICE".zip)
+            if [ "${#zip_files[@]}" -ne 1 ] || [ ! -s "bundles/release-notes-$mode.md" ]; then
+              echo "Expected one ZIP and release notes for $DEVICE ($mode)." >&2
+              exit 1
+            fi
+            cp "${zip_files[0]}" release/
+            {
+              echo "### $mode"
+              echo
+              cat "bundles/release-notes-$mode.md"
+              echo
+            } >> release-notes.md
+          done
+          {
+            echo "tag=$DEVICE-$BUILD_DATE"
+            echo "title=$DEVICE - $(date -d "$BUILD_DATE" '+%Y-%m-%d')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload device artifact containing both kernel ZIPs
+        uses: actions/upload-artifact@v7
+        with:
+          name: kernel-${{ inputs.device }}
+          path: release/*.zip
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+      - name: Publish kernel release with both modes
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: ${{ steps.release.outputs.title }}
           target_commitish: ${{ github.sha }}
-          body_path: out/release-notes.md
-          files: ${{ steps.release.outputs.zip_file }}
+          body_path: release-notes.md
+          files: release/*.zip
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove superseded ZIPs and temporary build bundles
+        uses: actions/github-script@v8
+        env:
+          DEVICE: ${{ inputs.device }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        with:
+          script: |
+            const fs = require('fs');
+            const currentZIPs = new Set(fs.readdirSync('release'));
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              ...context.repo,
+              tag: process.env.RELEASE_TAG,
+            });
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              ...context.repo,
+              release_id: release.id,
+              per_page: 100,
+            });
+            for (const asset of assets) {
+              const isKernelZIP = ['stock', 'ksu'].some(mode => asset.name.startsWith(`not-${mode}-`))
+                && asset.name.endsWith(`-${process.env.DEVICE}.zip`);
+              if (isKernelZIP && !currentZIPs.has(asset.name)) {
+                await github.rest.repos.deleteReleaseAsset({
+                  ...context.repo,
+                  asset_id: asset.id,
+                });
+              }
+            }
+            const names = new Set(['stock', 'ksu'].map(mode => `build-${process.env.DEVICE}-${mode}`));
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              ...context.repo,
+              run_id: context.runId,
+              per_page: 100,
+            });
+            for (const artifact of artifacts) {
+              if (names.has(artifact.name)) {
+                await github.rest.actions.deleteArtifact({
+                  ...context.repo,
+                  artifact_id: artifact.id,
+                });
+              }
+            }

@@ -19,7 +19,8 @@ case "$BUILD_MODE" in
         ;;
 esac
 
-ZIPNAME="not-${BUILD_MODE}-$(date '+%Y%m%d').zip"
+BUILD_DATE="${BUILD_DATE:-$(date '+%Y%m%d')}"
+ZIPNAME="not-${BUILD_MODE}-${BUILD_DATE}.zip"
 TC_DIR="$(pwd)/tc/clang"
 DEFCONFIG="vendor/kona-perf_defconfig vendor/samsung/kona-sec-common.config vendor/samsung/$DEVICE.config $MODE_CONFIG vendor/not/localversion.config"
 
