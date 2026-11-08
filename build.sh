@@ -37,30 +37,7 @@ git submodule update --init --recursive
 
 export PATH="$TC_DIR/bin:$PATH"
 
-if ! [ -d "$TC_DIR" ]; then
-    echo -e "${YELLOW}Clang not found! Downloading...${NC}"
-    mkdir -p "$TC_DIR"
-
-    ASSET_URL=$(
-        curl -fsSL https://api.github.com/repos/Neutron-Toolchains/clang-build-catalogue/releases/latest |
-        jq -r '.assets[]
-            | select(.name | endswith(".tar.zst"))
-            | .browser_download_url' |
-        head -n1
-    )
-
-    if [ -z "$ASSET_URL" ]; then
-        echo -e "${RED}Failed to find latest release!${NC}"
-        exit 1
-    fi
-
-    if ! curl -L "$ASSET_URL" | tar --zstd -x -C "$TC_DIR" --strip-components=1; then
-        echo -e "${RED}Download failed!${NC}"
-        exit 1
-    fi
-
-    echo -e "${GREEN}Clang ready!${NC}"
-fi
+bash scripts/download_clang.sh "$TC_DIR"
 
 mkdir -p out
 echo -e "${YELLOW}building with: $DEFCONFIG${NC}"
