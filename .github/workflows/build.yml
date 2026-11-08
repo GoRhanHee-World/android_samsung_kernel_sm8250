@@ -54,14 +54,14 @@ jobs:
       - name: Setting up the environment
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y gcc-aarch64-linux-gnu jq zstd
+          sudo apt-get install -y gcc-aarch64-linux-gnu zstd
 
       - name: Restore Clang toolchain cache
         id: clang-cache
         uses: actions/cache/restore@v5
         with:
           path: tc/clang
-          key: neutron-clang-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.prepare.outputs.build_date }}
+          key: neutron-clang-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/download_clang.sh') }}
 
       - name: Ensure Clang toolchain is ready
         run: bash scripts/download_clang.sh "$GITHUB_WORKSPACE/tc/clang"
