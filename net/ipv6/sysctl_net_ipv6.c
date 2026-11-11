@@ -185,7 +185,7 @@ static struct ctl_table ipv6_rotable[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= &one
+		.extra1		= SYSCTL_ONE
 	},
 #ifdef CONFIG_NETLABEL
 	{

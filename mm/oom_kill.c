@@ -44,6 +44,7 @@
 #include <linux/memory_hotplug.h>
 #include <linux/show_mem_notifier.h>
 #include <linux/cred.h>
+#include <linux/nmi.h>
 
 #include <asm/tlb.h>
 #include "internal.h"
@@ -389,62 +390,74 @@ static void select_bad_process(struct oom_control *oc)
 	oc->chosen_points = oc->chosen_points * 1000 / oc->totalpages;
 }
 
+struct dump_tasks_context {
+	const nodemask_t *nodemask;
+	unsigned long heaviest_rss_sum;
+	char heaviest_comm[TASK_COMM_LEN];
+	pid_t heaviest_pid;
+};
+
+static int dump_task(struct task_struct *p, void *arg)
+{
+	struct dump_tasks_context *ctx = arg;
+	struct task_struct *task;
+	unsigned long rss_sum;
+
+	if (oom_unkillable_task(p, NULL, ctx->nodemask))
+		return 0;
+
+	task = find_lock_task_mm(p);
+	if (!task)
+		return 0;
+
+	pr_info("[%7d] %5d %5d %8lu %8lu %8ld %8lu         %5hd %s\n",
+		task->pid, from_kuid(&init_user_ns, task_uid(task)),
+		task->tgid, task->mm->total_vm, get_mm_rss(task->mm),
+		mm_pgtables_bytes(task->mm),
+		get_mm_counter(task->mm, MM_SWAPENTS),
+		task->signal->oom_score_adj, task->comm);
+
+	rss_sum = get_mm_rss(task->mm) +
+		get_mm_counter(task->mm, MM_SWAPENTS);
+	if (rss_sum > ctx->heaviest_rss_sum) {
+		ctx->heaviest_rss_sum = rss_sum;
+		memcpy(ctx->heaviest_comm, task->comm, TASK_COMM_LEN);
+		ctx->heaviest_pid = task->pid;
+	}
+	task_unlock(task);
+	return 0;
+}
+
 /**
- * dump_tasks - dump current memory state of all system tasks
- * @memcg: current's memory controller, if constrained
- * @nodemask: nodemask passed to page allocator for mempolicy ooms
- *
- * Dumps the current memory state of all eligible tasks.  Tasks not in the same
- * memcg, not in the same cpuset, or bound to a disjoint set of mempolicy nodes
- * are not shown.
- * State information includes task's pid, uid, tgid, vm size, rss,
- * pgtables_bytes, swapents, oom_score_adj value, and name.
+ * dump_tasks - dump current memory state of all eligible tasks
+ * @memcg: memory controller to scan, or NULL for a global scan
+ * @nodemask: nodemask passed to the allocator for mempolicy OOMs
  */
 void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask)
 {
-	struct task_struct *p;
-	struct task_struct *task;
-	unsigned long cur_rss_sum;
-	unsigned long heaviest_rss_sum = 0;
-	char heaviest_comm[TASK_COMM_LEN];
-	pid_t heaviest_pid;
+	struct dump_tasks_context ctx = { .nodemask = nodemask };
 
 	pr_info("Tasks state (memory values in pages):\n");
 	pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
-	rcu_read_lock();
-	for_each_process(p) {
-		if (oom_unkillable_task(p, memcg, nodemask))
-			continue;
 
-		task = find_lock_task_mm(p);
-		if (!task) {
-			/*
-			 * This is a kthread or all of p's threads have already
-			 * detached their mm's.  There's no need to report
-			 * them; they can't be oom killed anyway.
-			 */
-			continue;
-		}
+	if (memcg) {
+		mem_cgroup_scan_tasks(memcg, dump_task, &ctx);
+	} else {
+		struct task_struct *p;
+		int i = 0;
 
-		pr_info("[%7d] %5d %5d %8lu %8lu %8ld %8lu         %5hd %s\n",
-			task->pid, from_kuid(&init_user_ns, task_uid(task)),
-			task->tgid, task->mm->total_vm, get_mm_rss(task->mm),
-			mm_pgtables_bytes(task->mm),
-			get_mm_counter(task->mm, MM_SWAPENTS),
-			task->signal->oom_score_adj, task->comm);
-		cur_rss_sum = get_mm_rss(task->mm) +
-					get_mm_counter(task->mm, MM_SWAPENTS);
-		if (cur_rss_sum > heaviest_rss_sum) {
-			heaviest_rss_sum = cur_rss_sum;
-			strncpy(heaviest_comm, task->comm, TASK_COMM_LEN);
-			heaviest_pid = task->pid;
+		rcu_read_lock();
+		for_each_process(p) {
+			if ((++i & 1023) == 0)
+				touch_softlockup_watchdog();
+			dump_task(p, &ctx);
 		}
-		task_unlock(task);
+		rcu_read_unlock();
 	}
-	rcu_read_unlock();
-	if (heaviest_rss_sum)
-		pr_info("heaviest_task:%s(%d) rss_pages:%lu\n", heaviest_comm,
-			heaviest_pid, heaviest_rss_sum);
+	if (ctx.heaviest_rss_sum)
+		pr_info("heaviest_task:%s(%d) rss_pages:%lu\n",
+			ctx.heaviest_comm, ctx.heaviest_pid,
+			ctx.heaviest_rss_sum);
 }
 
 static void dump_header(struct oom_control *oc, struct task_struct *p)
