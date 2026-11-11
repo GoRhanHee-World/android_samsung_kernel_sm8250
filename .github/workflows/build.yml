@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       build_date: ${{ steps.date.outputs.build_date }}
     steps:
@@ -29,7 +29,7 @@ jobs:
   build-kernel:
     name: ${{ inputs.device_name }} (${{ matrix.build_mode }})
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     strategy:
@@ -138,7 +138,7 @@ jobs:
   publish:
     name: Publish ${{ inputs.device_name }} (stock + ksu)
     needs: [prepare, build-kernel]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       DEVICE: ${{ inputs.device }}
       BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
