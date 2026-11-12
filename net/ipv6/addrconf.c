@@ -6497,7 +6497,7 @@ static const struct ctl_table addrconf_sysctl[] = {
 		.maxlen		= sizeof(u32),
 		.mode		= 0644,
 		.proc_handler	= proc_douintvec_minmax,
-		.extra1		= (void *)&zero,
+		.extra1		= SYSCTL_ZERO,
 	},
 	{
 		.procname	= "accept_ra_min_hop_limit",
