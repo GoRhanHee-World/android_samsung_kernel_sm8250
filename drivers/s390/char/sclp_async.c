@@ -64,9 +64,6 @@ static struct notifier_block call_home_panic_nb = {
 	.priority = INT_MAX,
 };
 
-static int zero;
-static int one = 1;
-
 static struct ctl_table callhome_table[] = {
 	{
 		.procname	= "callhome",
