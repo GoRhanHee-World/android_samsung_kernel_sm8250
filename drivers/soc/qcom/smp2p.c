@@ -670,16 +670,23 @@ static int qcom_smp2p_probe(struct platform_device *pdev)
 
 	ret = devm_request_threaded_irq(&pdev->dev, smp2p->irq,
 					qcom_smp2p_isr, qcom_smp2p_intr,
-					IRQF_NO_SUSPEND | IRQF_ONESHOT,
+					IRQF_ONESHOT,
 					"smp2p", (void *)smp2p);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to request interrupt\n");
 		goto unreg_ws;
 	}
-	enable_irq_wake(smp2p->irq);
+	/* Let the IRQ core arm and report this interrupt as a wakeup source. */
+	ret = enable_irq_wake(smp2p->irq);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to enable interrupt wake: %d\n", ret);
+		goto free_irq;
+	}
 
 	return 0;
 
+free_irq:
+	devm_free_irq(&pdev->dev, smp2p->irq, smp2p);
 unreg_ws:
 	wakeup_source_unregister(smp2p->ws);
 
@@ -707,6 +714,8 @@ static int qcom_smp2p_remove(struct platform_device *pdev)
 	struct qcom_smp2p *smp2p = platform_get_drvdata(pdev);
 	struct smp2p_entry *entry;
 
+	disable_irq_wake(smp2p->irq);
+	devm_free_irq(&pdev->dev, smp2p->irq, smp2p);
 	wakeup_source_unregister(smp2p->ws);
 
 	list_for_each_entry(entry, &smp2p->inbound, node)
