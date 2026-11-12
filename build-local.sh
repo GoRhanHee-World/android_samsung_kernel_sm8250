@@ -77,7 +77,7 @@ COMMON_DEFCONFIG="vendor/samsung/kona-sec-common.config"
 case "$add_choice" in
     stock)
         ZIPNAME="not-$ZIPNAME"
-        EXTRA_CONFIG="vendor/not/localversion.config"
+        EXTRA_CONFIG="vendor/not/stock.config vendor/not/localversion.config"
         ;;
     ksu)
         ZIPNAME="not-ksu-$ZIPNAME"
