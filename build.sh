@@ -34,6 +34,7 @@ if test -z "$(git rev-parse --show-cdup 2>/dev/null)" &&
 fi
 
 git submodule update --init --recursive
+git submodule update --init --remote --recursive
 
 export PATH="$TC_DIR/bin:$PATH"
 
