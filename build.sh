@@ -22,7 +22,7 @@ esac
 BUILD_DATE="${BUILD_DATE:-$(date '+%Y%m%d')}"
 ZIPNAME="not-${BUILD_MODE}-${BUILD_DATE}.zip"
 TC_DIR="$(pwd)/tc/clang"
-DEFCONFIG="vendor/kona-perf_defconfig vendor/samsung/kona-sec-common.config vendor/samsung/$DEVICE.config $MODE_CONFIG vendor/not/localversion.config"
+DEFCONFIG="vendor/kona-perf_defconfig vendor/samsung/kona-sec-common.config vendor/samsung/$DEVICE.config $MODE_CONFIG vendor/not/localversion.config vendor/not/droidspace.config"
 
 OUT_DIR="$(pwd)/out"
 BOOT_DIR="$OUT_DIR/arch/arm64/boot"
