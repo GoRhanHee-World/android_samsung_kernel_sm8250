@@ -52,6 +52,7 @@ fi
 {
     echo '  # Keep the recovery APEX environment for this kernel-only installer.'
     echo '  # ROM APEX expansion can block while reusing occupied loop devices.'
+    # shellcheck disable=SC2016
     echo '  if [ "$(file_getprop "$AKHOME/anykernel.sh" do.mount_apex)" == 0 ]; then'
     echo '    echo "Skipping ROM APEX mounts for kernel-only installation." >&2;'
     echo '    return 0;'
@@ -64,12 +65,20 @@ for file in "$IMAGE" dtb dtbo.img; do
     cp "$BOOT_DIR/$file" "$STAGE_DIR/$file"
     chmod 0644 "$STAGE_DIR/$file"
 done
+EXTRA_FILES=()
+case "$DEVICE" in
+    x1q|y2q|z3q)
+        [ -s "$BOOT_DIR/s20-overseas.json" ] || { echo "Missing S20 overseas payload metadata" >&2; exit 1; }
+        cp "$BOOT_DIR/s20-overseas.json" "$STAGE_DIR/s20-overseas.json"
+        EXTRA_FILES+=(s20-overseas.json)
+        ;;
+esac
 chmod 0755 "$STAGE_DIR/anykernel.sh" "$STAGE_DIR/META-INF/com/google/android/update-binary"
 find "$STAGE_DIR/tools" -type f -exec chmod 0755 {} +
 
 (
     cd "$STAGE_DIR"
-    zip -r9 -q flashable.zip LICENSE META-INF tools anykernel.sh "$IMAGE" dtb dtbo.img
+    zip -r9 -q flashable.zip LICENSE META-INF tools anykernel.sh "$IMAGE" dtb dtbo.img "${EXTRA_FILES[@]}"
 )
 mv -f -- "$STAGE_DIR/flashable.zip" "$OUTPUT_ZIP"
 echo "Created $OUTPUT_ZIP"

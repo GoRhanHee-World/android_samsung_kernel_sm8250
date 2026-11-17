@@ -142,6 +142,7 @@ Android.bp
 
 # generated build files
 
+/tests/
 /AnyKernel3/
 noKernel/
 out/

@@ -62,6 +62,19 @@ make -j$(nproc --all) O=out ARCH=arm64 \
     OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
     CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
     LLVM=1 LLVM_IAS=1 dtbo.img
+
+# MinsOS regional overlay selection uses the Korean kernel configuration for
+# C code; command-line machine symbols only add CHN/JPN device-tree targets.
+case "$DEVICE" in
+    x1q|y2q|z3q)
+        make -j"$(nproc --all)" O=out ARCH=arm64 \
+            CC=clang LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LLVM=1 LLVM_IAS=1 "CONFIG_MACH_${DEVICE^^}_CHN_OPEN=y" \
+            "CONFIG_MACH_${DEVICE^^}_JPN_SINGLE=y" dtbs
+        ;;
+esac
     
 make -j$(nproc --all) O=out ARCH=arm64 \
     CC=clang LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm \
@@ -78,6 +91,10 @@ for file in "$BOOT_DIR/Image" "$BOOT_DIR/dtbo.img" "${DTBS[@]}"; do
     fi
 done
 cat "${DTBS[@]}" > "$BOOT_DIR/dtb"
+
+case "$DEVICE" in
+    x1q|y2q|z3q) bash scripts/package_s20_overseas.sh "$DEVICE" "$BOOT_DIR" ;;
+esac
 
 bash prebuilts/make_anykernel_package.sh "$ZIPNAME" "$BOOT_DIR" "$DEVICE"
 
