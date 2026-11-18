@@ -19,11 +19,12 @@ supported.patchlevels=
 supported.vendorpatchlevels=
 '; }
 
-BLOCK=/dev/block/platform/soc/1d84000.ufshc/by-name/boot;
+BLOCK=auto;
 IS_SLOT_DEVICE=0;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
 NO_MAGISK_CHECK=1;
+NO_VBMETA_PARTITION_PATCH=1;
 
 . tools/ak3-core.sh;
 
